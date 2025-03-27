@@ -96,6 +96,6 @@ async def main():
 
 # Entry point for Heroku or cloud platforms
 if __name__ == '__main__':
+    # Do NOT manually handle event loop, let Application handle it internally
     import asyncio
-    # Directly run main without asyncio.run() to avoid event loop conflicts
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
