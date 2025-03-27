@@ -1,5 +1,4 @@
 import os
-import asyncio
 import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, CallbackContext
@@ -45,14 +44,9 @@ async def download_youtube_video(url):
         'ffmpeg_location': 'ffmpeg'
     }
 
-    loop = asyncio.get_event_loop()
-
-    def run_yt_dlp():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            return ydl.prepare_filename(info)
-
-    filename = await loop.run_in_executor(None, run_yt_dlp)
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
     return filename
 
 # Handle messages with a URL
@@ -93,7 +87,7 @@ async def handle_admin_commands(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Unknown admin command.")
 
-# Main bot function (updated for Heroku compatibility)
+# Main bot function (automatic event loop management by Application)
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
@@ -101,6 +95,6 @@ async def main():
     await app.run_polling()
 
 if __name__ == '__main__':
-    # Using the existing event loop for Heroku compatibility
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    # Let the application manage the event loop itself
+    import asyncio
+    asyncio.run(main())
