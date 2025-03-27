@@ -3,7 +3,7 @@
 import requests
 import time
 
-url = "koyeb public url"
+url = "contemporary-bonni-akkkkfvbnbdtlpo466u-ad416e1d.koyeb.app/"
 
 while True:
     try:
