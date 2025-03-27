@@ -5,12 +5,12 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, CallbackContext
 import yt_dlp
 
-# Config
+# Bot configuration
 BOT_TOKEN = "7516781828:AAFWWfcB-u5LZpZmBGjtAm_XWgK4YkRYTng"
 ADMIN_ID = 7439517139
 DOWNLOAD_DIR = 'downloads'
 
-# Headers to mimic a real browser
+# Headers for requests
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
     "Accept-Language": "en-US,en;q=0.9",
@@ -22,7 +22,7 @@ HEADERS = {
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# Validate YouTube URL with requests and headers
+# Validate YouTube URL
 def is_youtube_url_valid(url):
     try:
         response = requests.head(url, headers=HEADERS, allow_redirects=True, timeout=10)
@@ -30,7 +30,7 @@ def is_youtube_url_valid(url):
     except Exception:
         return False
 
-# Download YouTube video
+# Download the YouTube video
 async def download_youtube_video(url):
     filename = None
     ydl_opts = {
@@ -42,7 +42,7 @@ async def download_youtube_video(url):
         'retries': 5,
         'user_agent': HEADERS["User-Agent"],
         'geo_bypass': True,
-        'ffmpeg_location': 'ffmpeg'  # Optional if ffmpeg is in system path
+        'ffmpeg_location': 'ffmpeg'
     }
 
     loop = asyncio.get_event_loop()
@@ -55,7 +55,7 @@ async def download_youtube_video(url):
     filename = await loop.run_in_executor(None, run_yt_dlp)
     return filename
 
-# Handle messages (URL input)
+# Handle messages with a URL
 async def handle_url(update: Update, context: CallbackContext):
     url = update.message.text.strip()
 
@@ -93,7 +93,7 @@ async def handle_admin_commands(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Unknown admin command.")
 
-# Main bot function
+# Main bot function (removing asyncio.run())
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
@@ -101,4 +101,5 @@ async def main():
     await app.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Directly run the main function without asyncio.run() for Heroku
+    asyncio.get_event_loop().run_until_complete(main())
