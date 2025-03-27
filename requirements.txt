@@ -1,0 +1,5 @@
+yt-dlp
+pyrogram
+flask
+threading
+json
