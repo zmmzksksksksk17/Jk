@@ -93,7 +93,7 @@ async def handle_admin_commands(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Unknown admin command.")
 
-# Main bot function (removing asyncio.run())
+# Main bot function (updated for Heroku compatibility)
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
@@ -101,5 +101,6 @@ async def main():
     await app.run_polling()
 
 if __name__ == '__main__':
-    # Directly run the main function without asyncio.run() for Heroku
-    asyncio.get_event_loop().run_until_complete(main())
+    # Using the existing event loop for Heroku compatibility
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
