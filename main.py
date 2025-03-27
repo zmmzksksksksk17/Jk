@@ -94,8 +94,8 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & filters.COMMAND, handle_admin_commands))
     await app.run_polling()
 
-# Entry point for Heroku or cloud platforms
+# Entry point for Heroku or cloud platforms (without manually managing event loop)
 if __name__ == '__main__':
-    # Do NOT manually handle event loop, let Application handle it internally
+    # DO NOT manually run the event loop. Let Application handle it.
     import asyncio
     asyncio.run(main())
