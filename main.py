@@ -1,323 +1,104 @@
 import os
+import asyncio
+import requests
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, CallbackContext
 import yt_dlp
-from pyrogram import Client, filters
-from pyrogram.types import ReplyKeyboardMarkup
-from flask import Flask
-import threading
-import json
-from datetime import datetime
 
-app = Flask(__name__)
-
-# Telegram Bot Configuration
-API_ID = 27303400
-API_HASH = "bcfc2fab8ad45bccdd13270669b16aef"
+# Config
 BOT_TOKEN = "7516781828:AAFWWfcB-u5LZpZmBGjtAm_XWgK4YkRYTng"
+ADMIN_ID = 7439517139
+DOWNLOAD_DIR = 'downloads'
 
-# Auto-update yt-dlp function
-def update_yt_dlp():
-    print("🔄 Checking for yt-dlp updates...")
-    os.system("yt-dlp -U")
+# Headers to mimic a real browser
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive"
+}
 
-# Statistics and user tracking
-def load_stats():
+# Ensure download directory exists
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
+
+# Validate YouTube URL with requests and headers
+def is_youtube_url_valid(url):
     try:
-        with open('stats.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {
-            "total_users": 0,
-            "total_downloads": 0,
-            "successful_downloads": 0,
-            "daily_downloads": {},
-            "users": []
-        }
+        response = requests.head(url, headers=HEADERS, allow_redirects=True, timeout=10)
+        return response.status_code == 200
+    except Exception:
+        return False
 
-def save_stats():
-    with open('stats.json', 'w') as f:
-        json.dump(stats, f)
-
-stats = load_stats()
-user_ids = set(stats["users"])
-
-# Create a Pyrogram Client
-bot = Client("insta_reels_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-@app.route('/')
-def home():
-    return 'Bot is running!'
-
-@app.route('/keep_alive')
-def keep_alive():
-    return 'Bot is active!'
-
-def create_keyboard(is_admin=False):
-    buttons = [
-        ["📥 Download Video", "❓ Help"],
-        ["📊 Statistics"]
-    ]
-    if is_admin:
-        buttons.extend([["🔧 Admin Panel"], ["📢 Broadcast"]])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
-def download_video(url):
-    import time
-    output_path = f"downloads/{int(time.time())}.%(ext)s"
-    
+# Download YouTube video
+async def download_youtube_video(url):
+    filename = None
     ydl_opts = {
-        'format': 'best',
-        'outtmpl': output_path,
-        'quiet': False,
+        'format': 'bestvideo+bestaudio/best',
+        'outtmpl': f'{DOWNLOAD_DIR}/%(title)s.%(ext)s',
+        'merge_output_format': 'mp4',
+        'quiet': True,
         'noplaylist': True,
-        'sleep_interval': 3,
-        'max_sleep_interval': 7,
-        'concurrent_fragment_downloads': 5,
-        'extractor_args': {
-            'youtube': {'player_client': 'android'},
-            'twitter': {'max_retries': 3}
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10)',
-        },
-        'throttling_method': 'http',
+        'retries': 5,
+        'user_agent': HEADERS["User-Agent"],
+        'geo_bypass': True,
+        'ffmpeg_location': 'ffmpeg'  # Optional if ffmpeg is in system path
     }
 
-    # Load cookies if available
-    if os.path.exists("cookies.txt"):
-        ydl_opts['cookiefile'] = "cookies.txt"
+    loop = asyncio.get_event_loop()
 
-    # Optional proxy support
-    proxy_url = None  # Set your proxy URL here if needed
-    if proxy_url:
-        ydl_opts['proxy'] = proxy_url
-
-    # Platform-specific optimizations
-    if "twitter.com" in url or "x.com" in url:
-        ydl_opts.update({
-            'format': 'best[ext=mp4]',
-            'cookiesfrombrowser': None
-        })
-    elif "instagram.com" in url:
-        ydl_opts.update({
-            'format': 'best',
-            'extract_flat': False,
-            'force_generic_extractor': False
-        })
-
-    try:
+    def run_yt_dlp():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return ydl.prepare_filename(info)
-    except Exception as e:
-        print(f"Download error: {str(e)}")
-        raise
 
-@bot.on_message(filters.command("start"))
-async def start_command(client, message):
-    if message.from_user.id not in user_ids:
-        stats["total_users"] += 1
-        user_ids.add(message.from_user.id)
-        stats["users"].append(message.from_user.id)
-        save_stats()
-        
-        # Send notification to admin
-        admin_id = 7439517139
-        user = message.from_user
-        notification = f"🆕 New User Joined!\n\n👤 Name: {user.first_name}\n🆔 User ID: `{user.id}`\n📝 Username: @{user.username or 'None'}"
-        try:
-            await client.send_message(admin_id, notification)
-        except:
-            print("Could not send admin notification")
+    filename = await loop.run_in_executor(None, run_yt_dlp)
+    return filename
 
-    is_admin = message.from_user.id == 7439517139
-    welcome_text = """💫 Ultimate Videos Downloader 🚀
+# Handle messages (URL input)
+async def handle_url(update: Update, context: CallbackContext):
+    url = update.message.text.strip()
 
-👀 Seamless Downloading for:
-• 📸 Instagram Videos
-• 📱 Facebook Reels
-• 🐦 Twitter/X Videos
-
-Features:
-• ⚡ Ultra-Fast Downloads
-• 🎥 High-Quality Video Capture
-• 📊 Comprehensive Download Tracking
-
-Simply send your video link!"""
-
-    await message.reply_text(welcome_text, reply_markup=create_keyboard(is_admin=is_admin))
-
-@bot.on_message(filters.regex("^❓ Help$") | filters.command("help"))
-async def help_command(client, message):
-    help_text = """🆘 Help & Instructions
-
-1. To download a video, simply send a Instagram,Facebook,Twitter link.
-2. The bot supports Instagram videos,Facebook Reels,Twitter Videos.
-3. Maximum file size: 2GB
-4. Large videos may be sent in multiple parts.
-5. Use '📊 Statistics' to view your download stats.
-6. If you encounter any issues, please try again or contact support.
-
-For more assistance, contact @Biobhaiya"""
-    is_admin = message.from_user.id == 7439517139
-    await message.reply_text(help_text, reply_markup=create_keyboard(is_admin=is_admin))
-
-@bot.on_message(filters.regex("^📊 Statistics$") | filters.command("stats"))
-async def stats_command(client, message):
-    today = datetime.now().strftime("%Y-%m-%d")
-    daily_downloads = stats.get("daily_downloads", {}).get(today, 0)
-    success_rate = (stats["successful_downloads"] / stats["total_downloads"] * 100) if stats["total_downloads"] > 0 else 0
-
-    stats_text = f"""📊 Bot Statistics
-
-👥 Total Users: {stats["total_users"]}
-📥 Total Downloads: {stats["total_downloads"]}
-✅ Successful Downloads: {stats["successful_downloads"]}
-📅 Today's Downloads: {daily_downloads}
-🔢 Success Rate: {success_rate:.2f}%"""
-    is_admin = message.from_user.id == 7439517139
-    await message.reply_text(stats_text, reply_markup=create_keyboard(is_admin=is_admin))
-
-@bot.on_message(filters.regex("^📥 Download Video$"))
-async def download_button(client, message):
-    is_admin = message.from_user.id == 7439517139
-    await message.reply_text("Please send me a video URL to download.", reply_markup=create_keyboard(is_admin=is_admin))
-
-@bot.on_message(filters.regex("^🔧 Admin Panel$"))
-async def admin_button(client, message):
-    if message.from_user.id == 7439517139:
-        admin_text = f"""🔧 Admin Panel
-
-Current Statistics:
-👥 Total Users: {stats["total_users"]}
-📥 Total Downloads: {stats["total_downloads"]}
-✅ Success Rate: {(stats["successful_downloads"] / stats["total_downloads"] * 100) if stats["total_downloads"] > 0 else 0:.2f}%"""
-        await message.reply_text(admin_text, reply_markup=create_keyboard(is_admin=True))
-    else:
-        await message.reply_text("⚠️ Admin panel access is restricted.", reply_markup=create_keyboard())
-
-@bot.on_message((filters.command("broadcast") | filters.regex("^📢 Broadcast$")) & filters.private)
-async def broadcast_command(client, message):
-    if message.text == "📢 Broadcast":
-        await message.reply_text("To broadcast a message, use:\n/broadcast <your message>")
-        return
-    if message.from_user.id != 7439517139:
-        await message.reply_text("⚠️ This command is only for admins.")
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await update.message.reply_text("Invalid YouTube URL.")
         return
 
-    if len(message.text.split()) < 2:
-        await message.reply_text("📝 Usage: /broadcast <message>")
+    if not is_youtube_url_valid(url):
+        await update.message.reply_text("That link seems broken or blocked. Try another.")
         return
 
-    broadcast_message = message.text.split(None, 1)[1]
-    success_count = 0
-    fail_count = 0
+    await update.message.reply_text("Downloading... please wait.")
 
-    progress_msg = await message.reply_text("🚀 Broadcasting message...")
-
-    for user_id in user_ids:
-        try:
-            await client.send_message(user_id, f"📢 Broadcast Message:\n\n{broadcast_message}")
-            success_count += 1
-        except:
-            fail_count += 1
-
-    await progress_msg.edit_text(
-        f"✅ Broadcast completed!\n"
-        f"✓ Success: {success_count}\n"
-        f"× Failed: {fail_count}"
-    )
-
-@bot.on_message(filters.text & filters.private)
-async def video_downloader(client, message):
-    url = message.text.strip()
-    supported_platforms = ["instagram.com/reel/", "youtube.com", "youtu.be", 
-                         "facebook.com", "fb.watch", "twitter.com", "x.com"]
-
-    if any(x in url for x in supported_platforms):
-        msg = await message.reply_text("⏳ Processing your download request...")
-        today = datetime.now().strftime("%Y-%m-%d")
-        stats["total_downloads"] += 1
-        stats["daily_downloads"][today] = stats["daily_downloads"].get(today, 0) + 1
-        save_stats()
-
-        try:
-            file_path = download_video(url)
-            if os.path.exists(file_path):
-                try:
-                    await message.reply_video(
-                        video=file_path,
-                        caption="🎉 Here's your video! Enjoy watching! 🎥",
-                        reply_markup=create_keyboard()
-                    )
-                    stats["successful_downloads"] += 1
-                    save_stats()
-                except Exception as e:
-                    await message.reply_text(
-                        "⚠️ Video file too large or format not supported. Try another video.",
-                        reply_markup=create_keyboard()
-                    )
-                finally:
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-            else:
-                await message.reply_text(
-                    "⚠️ Sorry, this video is unavailable or private. Please check if the video exists and is publicly accessible.",
-                    reply_markup=create_keyboard()
-                )
-        except Exception as e:
-            error_message = str(e)
-            if "Video unavailable" in error_message:
-                await message.reply_text(
-                    "⚠️ This video is no longer available or is private.",
-                    reply_markup=create_keyboard()
-                )
-            else:
-                await message.reply_text(
-                    "⚠️ An error occurred while processing your request. Please try again later.",
-                    reply_markup=create_keyboard()
-                )
-        finally:
-            await msg.delete()
-    else:
-        await message.reply_text(
-            "⚠️ Please send a valid Instagram Reel, YouTube video, or Facebook Reel URL.",
-            reply_markup=create_keyboard()
-        )
-
-def run_bot():
-    os.makedirs("downloads", exist_ok=True)
-    update_yt_dlp()  # Add auto-update on startup
-    print("🤖 Bot is running...")
-    bot.run()
-
-def keep_alive():
-    def run():
-        app.run(host='0.0.0.0', port=8000, threaded=True)
-    
-    def ping_server():
-        import time
-        import urllib.request
-        while True:
-            try:
-                urllib.request.urlopen("http://0.0.0.0:8000").read()
-            except:
-                pass
-            time.sleep(180)  # Ping every 3 minutes
-    
-    server = threading.Thread(target=run)
-    server.start()
-    
-    ping = threading.Thread(target=ping_server)
-    ping.daemon = True  # This ensures the thread exits when the main program exits
-    ping.start()
-
-if __name__ == "__main__":
-    # Start the keep-alive server with self-pinging
-    keep_alive()
     try:
-        # Start the bot
-        run_bot()
+        video_path = await download_youtube_video(url)
+        await update.message.reply_video(video=open(video_path, 'rb'))
+        os.remove(video_path)
     except Exception as e:
-        print(f"Bot encountered an error: {e}")
-        # Restart the bot
-        run_bot()
+        await update.message.reply_text(f"Download failed: {str(e)}")
+
+# Admin commands
+async def handle_admin_commands(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("You’re not authorized to use admin commands.")
+        return
+
+    command = update.message.text.lower()
+
+    if command == "/status":
+        await update.message.reply_text("Bot is running smoothly.")
+    elif command == "/stop":
+        await update.message.reply_text("Stopping the bot...")
+        await context.bot.stop()
+    else:
+        await update.message.reply_text("Unknown admin command.")
+
+# Main bot function
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    app.add_handler(MessageHandler(filters.TEXT & filters.COMMAND, handle_admin_commands))
+    await app.run_polling()
+
+if __name__ == '__main__':
+    asyncio.run(main())
